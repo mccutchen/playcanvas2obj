@@ -8,33 +8,74 @@ import urllib.request
 
 
 def main(input_data, output_file):
-    vertices = extract_vertices(input_data)
-    write_obj_vertices(vertices, output_file)
+    vertices = extract_coords(input_data, "position")
+    normals = extract_coords(input_data, "normal")
+    faces = extract_faces(input_data, vertices)
+
+    try:
+        write_obj_coords("v", vertices, output_file)
+        write_obj_coords("vn", normals, output_file)
+        write_obj_faces(faces, output_file)
+    except BrokenPipeError:
+        sys.stdout = None # https://stackoverflow.com/a/69833114/151221
 
 
-def write_obj_vertices(vertices, output_file):
+def write_obj_coords(prefix, coords, output_file):
     """
-    Write a series of vertex coordinates in OBJ format to the given destination
-    file.
+    Write a series of coordinates in OBJ format to the given destination file.
     """
-    for coords in vertices:
-        formatted_coords = " ".join(f"{n: f}" for n in coords)
-        try:
-            print(f"v {formatted_coords}", file=output_file)
-        except BrokenPipeError:
-            sys.stdout = None # https://stackoverflow.com/a/69833114/151221
+    labels = {"v": "vertices", "vn": "vertex normals"}
+    assert prefix in labels, f"unknown OBJ prefix: {prefix}"
+
+    for coord in coords:
+        formatted_coords = " ".join(f"{n: f}" for n in coord)
+        print(f"{prefix} {formatted_coords}", file=output_file)
+    print(f"# {len(coords)} {labels[prefix]}\n", file=output_file)
 
 
-def extract_vertices(input_data):
+def write_obj_faces(vertex_indices, output_file):
     """
-    Yield a sequence of (x, y, z) coordinates for each vertex in the input
+    Write a series of OBJ faces to the given destination file.
+    """
+    for i, indices in enumerate(vertex_indices):
+        formatted_faces = " ".join(f"{n}//{i+1}" for n in indices)
+        print(f"f {formatted_faces}", file=output_file)
+    print(f"# {len(vertex_indices)} faces\n", file=output_file)
+
+
+def extract_coords(input_data, key):
+    """
+    Returns a list of (x, y, z) coordinates for the given key in the input
     data.
     """
-    vertices = input_data["model"]["vertices"]
-    for vertex in vertices:
-        position = vertex["position"]
-        for batch in gen_batches(position["data"], position["components"]):
-            yield batch
+    assert len(input_data["model"]["vertices"]) == 1
+    source = input_data["model"]["vertices"][0][key]
+    assert source["components"] == 3
+
+    results = []
+    for coord in gen_batches(source["data"], source["components"]):
+        results.append(coord)
+    return results
+
+
+def extract_faces(input_data, vertices):
+    """
+    Returns a list of 3-tuple indexes into the vertex list for the input data.
+    """
+    assert len(input_data["model"]["meshes"]) == 1
+    mesh = input_data["model"]["meshes"][0]
+    assert mesh["vertices"] == 0
+    assert mesh["type"] == "triangles"
+    assert mesh["base"] == 0
+
+    vertex_count = len(vertices)
+    results = []
+    for indices in gen_batches(mesh["indices"], 3):
+        assert all(i < vertex_count for i in indices), f"face index in {indices} out of bounds"
+        # obj indexes are 1-based, playcanvas indexes are 0-based
+        results.append(tuple(i + 1 for i in indices))
+    return results
+
 
 
 def gen_batches(xs, size):
