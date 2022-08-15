@@ -48,9 +48,9 @@ def extract_coords(input_data, key):
     Returns a list of (x, y, z) coordinates for the given key in the input
     data.
     """
-    assert len(input_data["model"]["vertices"]) == 1
+    assert len(input_data["model"]["vertices"]) == 1, f"expected one set of vertices"
     source = input_data["model"]["vertices"][0][key]
-    assert source["components"] == 3
+    assert source["components"] == 3, f"expected 3 vertex components, got {source['components']}"
 
     results = []
     for coord in gen_batches(source["data"], source["components"]):
@@ -62,18 +62,18 @@ def extract_faces(input_data, vertices):
     """
     Returns a list of 3-tuple indexes into the vertex list for the input data.
     """
-    assert len(input_data["model"]["meshes"]) == 1
-    mesh = input_data["model"]["meshes"][0]
-    assert mesh["vertices"] == 0
-    assert mesh["type"] == "triangles"
-    assert mesh["base"] == 0
 
     vertex_count = len(vertices)
-    results = []
-    for indices in gen_batches(mesh["indices"], 3):
-        assert all(i < vertex_count for i in indices), f"face index in {indices} out of bounds"
-        # obj indexes are 1-based, playcanvas indexes are 0-based
-        results.append(tuple(i + 1 for i in indices))
+    for mesh in input_data["model"]["meshes"]:
+        assert mesh["vertices"] == 0, f"expected mesh to correspond to first vertex"
+        assert mesh["type"] == "triangles", f"expected mesh type triangles, got {mesh['type']}"
+        assert mesh["base"] == 0, f"expected mesh base 0, got {mesh['base']}"
+
+        results = []
+        for indices in gen_batches(mesh["indices"], 3):
+            assert all(i < vertex_count for i in indices), f"face index in {indices} out of bounds"
+            # obj indexes are 1-based, playcanvas indexes are 0-based
+            results.append(tuple(i + 1 for i in indices))
     return results
 
 
@@ -134,6 +134,9 @@ if __name__ == "__main__":
         input_data = load_input(args.input)
         with open_output(args.output_path) as output_file:
             main(input_data, output_file)
+    except AssertionError as e:
+        print(f"error: not yet implemented: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
